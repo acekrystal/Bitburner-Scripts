@@ -134,28 +134,51 @@ async function little_prep(ns, hack_target, wt, gt, reserved_RAM) {
 
 async function little_hack(ns, hack_target, weaken_threads, grow_threads, hack_threads, reserved_RAM) {
 	ns.print("// Starting little_hack")
-    let testloopnr =0;
-    await ns.sleep("2500");
+	await ns.sleep("2500");
+
+	const white_list = ["home", "pserv-13","pserv-14"];
     const full_list = multiscan(ns, 'home');
+	
+	ns.print("lil hack: building worker list...")
 	let host_servers = [];
 	for (let i = 0; i < full_list.length; i++) {
+		
 		var server = full_list[i]; //was const, but why if we change this every loop?
-        ns.print("trying to upload hack scripts to ", server);
-        //await ns.sleep("100");
-		if (ns.hasRootAccess(server)) {
-			//await ns.scp('targeted-hack.js', 'home', server);
-			//await ns.scp('targeted-grow.js', 'home', server);
-			//await ns.scp('targeted-weaken.js', 'home', server);
-            await ns.scp('targeted-hack.js', server);
-			await ns.scp('targeted-grow.js', server);
-			await ns.scp('targeted-weaken.js', server);
-			host_servers.push(server);
-            ns.print("Uploading to ", server, " -> DONE :3");
-            await ns.sleep("500");
+		
+		// Skip server if a white list exists and the server is not in the white list.
+		if (typeof white_list !== 'undefined' && !(white_list.includes(server))) {
+			ns.print("  WhiteList: Excluded worker ", server);
+			continue;
 		}
+		if (typeof black_list !== 'undefined' && (black_list.includes(server))) {
+			ns.print("  BlackList: Excluded worker ", server);
+			continue;
+		}
+
+		if (!(ns.hasRootAccess(server))) {
+			ns.print("  NoRootAccess: Excluded worker ", server);
+			continue;
+		}
+
+		ns.print("  Included worker: ", server);
+		host_servers.push(server);
+
+		await ns.sleep("500");
 	}
+
+	ns.print("lil hack: copy files to workers...");
+	for (const server of host_servers) {
+		ns.print("  trying to upload hack scripts to ", server);
+		await ns.scp('targeted-hack.js', server); //await ns.scp('targeted-hack.js', 'home', server);
+		await ns.scp('targeted-grow.js', server);
+		await ns.scp('targeted-weaken.js', server);
+		ns.print("  Uploading to ", server, " -> DONE");
+		await ns.sleep("500");
+	}
+
+	ns.print("lil hack: get usable RAM...");
 	let usable_RAM = 0;
-	let c = 2;
+
 	host_servers.forEach(host => {
 		if (host == 'home') {
 			let home_ram = ns.getServerMaxRam('home') - ns.getServerUsedRam('home') - reserved_RAM;
@@ -167,41 +190,60 @@ async function little_hack(ns, hack_target, weaken_threads, grow_threads, hack_t
 			usable_RAM += ns.getServerMaxRam(host) - ns.getServerUsedRam(host);
 		}
 	})
+	ns.print("lil hack: RAM is ", usable_RAM, 'GB');
+	
+	ns.print("lil hack: calculate threads...");
 	let sec_increase;
 	let startTime = Date.now();
-	while(grow_threads * ns.getScriptRam('targeted-grow.js', 'home') + hack_threads * ns.getScriptRam('targeted-hack.js', 'home') + weaken_threads * ns.getScriptRam('targeted-weaken.js', 'home') > usable_RAM - host_servers.length) {
-		c += 1;
-		grow_threads = Math.floor(ns.growthAnalyze(hack_target, 1 / (1 - 1 / c)));
+	
+	let c = 2;
+	let required_RAM = 0;
+	while(grow_threads * ns.getScriptRam('targeted-grow.js', 'home') + hack_threads * ns.getScriptRam('targeted-hack.js', 'home') + weaken_threads * ns.getScriptRam('targeted-weaken.js', 'home') > usable_RAM ) { //- host_servers.length
+		
+		required_RAM = grow_threads * ns.getScriptRam('targeted-grow.js', 'home') + hack_threads * ns.getScriptRam('targeted-hack.js', 'home') + weaken_threads * ns.getScriptRam('targeted-weaken.js', 'home');
+		
+		grow_threads = Math.floor((ns.growthAnalyze(hack_target, 1 / (1 - 1 / c))));
         //For some reason it does not round threads correctly, this is a quick fix
-        var test_grow_threads = grow_threads - Math.floor(grow_threads);
-        if ( test_grow_threads > 0 ) {
+        //var test_grow_threads = grow_threads - Math.floor(grow_threads);
+        //if ( test_grow_threads > 0 ) {
             //throw(Error("Rounding issue on hack_threads left ", test_hack_threads));
-            ns.print("Error in rounding 1st grow_threads, fixing number ", grow_threads);
-            grow_threads = Math.floor(grow_threads);
-            ns.print("(re-)Rounded grow_threads to ", grow_threads);
-            await ns.sleep("5000");
-        }
-		hack_threads = Math.floor(ns.hackAnalyzeThreads(hack_target, ns.getServerMoneyAvailable(hack_target) / c)) / ns.hackAnalyzeChance(hack_target);
+        //    ns.print("Error in rounding 1st grow_threads, fixing number ", grow_threads);
+        //    grow_threads = Math.floor(grow_threads);
+        //    ns.print("(re-)Rounded grow_threads to ", grow_threads);
+        //    await ns.sleep("5000");
+        //}
+		hack_threads = Math.floor((ns.hackAnalyzeThreads(hack_target, ns.getServerMoneyAvailable(hack_target) / c)) / ns.hackAnalyzeChance(hack_target));
 		//For some reason it does not round threads correctly, this is a quick fix
-        var test_hack_threads = hack_threads - Math.floor(hack_threads);
-        if ( test_hack_threads > 0 ) {
+        //var test_hack_threads = hack_threads - Math.floor(hack_threads);
+        //if ( test_hack_threads > 0 ) {
             //throw(Error("Rounding issue on hack_threads left ", test_hack_threads));
-            ns.print("Error in rounding 1st hack_threads, fixing number ", hack_threads);
-            hack_threads = Math.floor(hack_threads);
-            ns.print("(re-)Rounded hack_threads to ", hack_threads);
-            await ns.sleep("5000");
-        }
+        //    ns.print("Error in rounding 1st hack_threads, fixing number ", hack_threads);
+        //    hack_threads = Math.floor(hack_threads);
+        //    ns.print("(re-)Rounded hack_threads to ", hack_threads);
+        //    await ns.sleep("5000");
+        //}
         sec_increase = ns.hackAnalyzeSecurity(hack_threads) + ns.growthAnalyzeSecurity(grow_threads);
 		weaken_threads = 1;
 		while (ns.weakenAnalyze(weaken_threads) < sec_increase * 1.1) {
 			weaken_threads += 3;
             ns.print("// 1st increasing weaken_threads for ", hack_target," to ", weaken_threads);
-			await ns.sleep(1);
+			await ns.sleep(200);
 		}
-        ns.print("// ??? usableRam problem?", hack_target);
+        //ns.print("// ??? usableRam problem?", hack_target);
 		await ns.sleep(1);
-		if (Date.now() > startTime + 240000) {
-			throw(Error("line 65, loop longer than 2 minutes either need more RAM or change value of c decrement"));
+		if (Date.now() > startTime + 240000) { // 240000
+			ns.print("throw(Error(line 65, loop longer than 2 minutes either need more RAM or change value of c decrement));");
+			//throw(Error("line 65, loop longer than 2 minutes either need more RAM or change value of c decrement"));
+		}
+
+		ns.print("  req vs usable RAM: ", required_RAM, ' - ', usable_RAM);
+		// The c value of 2 results in a grow factor of 2
+		// When there is not enough memory available it gradually reduces to 1,1 grow factor.
+		if(c <= 30){
+			c += 1;
+		} else {
+			ns.print("  BREAK, not enough memory in workerpool...");
+			break;
 		}
 	}
 
@@ -210,6 +252,7 @@ async function little_hack(ns, hack_target, weaken_threads, grow_threads, hack_t
 		return 0;
 	}
 
+	let testloopnr =0;
 	for (let i = 0; i < host_servers.length; i++) {
 		var server = host_servers[i]; //was const, but why if we change this every loop?
 		let threads = 0;
@@ -266,26 +309,26 @@ async function little_hack(ns, hack_target, weaken_threads, grow_threads, hack_t
 				}
 			}
 			if (!weaken_threads && !grow_threads && !hack_threads) {
-				hack_threads = Math.floor(ns.hackAnalyzeThreads(hack_target, ns.getServerMoneyAvailable(hack_target) / c));
+				hack_threads = Math.floor((ns.hackAnalyzeThreads(hack_target, ns.getServerMoneyAvailable(hack_target) / c)));
                 //For some reason it does not round hack_threads correctly, this is a quick fix
                 var test_hack_threads = hack_threads - Math.floor(hack_threads);
-                if ( test_hack_threads > 0 ) { 
-                    //throw(Error("Rounding issue on hack_threads left ", test_hack_threads));
-                    ns.print("Error in rounding 2nd hack_threads, fixing number ", hack_threads);
-                    hack_threads = Math.floor(hack_threads);
-                    ns.print("(re-)Rounded hack_threads to ", hack_threads);
-                    //await ns.sleep("5000");
-                }
-                grow_threads = Math.floor(ns.growthAnalyze(hack_target, 1 / (1 - 1 / c)));
+                //if ( test_hack_threads > 0 ) { 
+                //   //throw(Error("Rounding issue on hack_threads left ", test_hack_threads));
+                //    ns.print("Error in rounding 2nd hack_threads, fixing number ", hack_threads);
+                //    hack_threads = Math.floor(hack_threads);
+                //    ns.print("(re-)Rounded hack_threads to ", hack_threads);
+                //    //await ns.sleep("5000");
+                //}
+                grow_threads = Math.floor((ns.growthAnalyze(hack_target, 1 / (1 - 1 / c))));
                 //For some reason it does not round threads correctly, this is a quick fix
-                var test_grow_threads = grow_threads - Math.floor(grow_threads);
-                if ( test_grow_threads > 0 ) {
-                    //throw(Error("Rounding issue on hack_threads left ", test_hack_threads));
-                    ns.print("Error in rounding 1st grow_threads, fixing number ", grow_threads);
-                    grow_threads = Math.floor(grow_threads);
-                    ns.print("(re-)Rounded grow_threads to ", grow_threads);
-                    await ns.sleep("5000");
-                }
+                //var test_grow_threads = grow_threads - Math.floor(grow_threads);
+                //if ( test_grow_threads > 0 ) {
+                //    //throw(Error("Rounding issue on hack_threads left ", test_hack_threads));
+                //    ns.print("Error in rounding 1st grow_threads, fixing number ", grow_threads);
+                //    grow_threads = Math.floor(grow_threads);
+                //    ns.print("(re-)Rounded grow_threads to ", grow_threads);
+                //    await ns.sleep("5000");
+                //}
 				sec_increase = ns.hackAnalyzeSecurity(hack_threads) + ns.growthAnalyzeSecurity(grow_threads);
 				weaken_threads = 1;
 				while (ns.weakenAnalyze(weaken_threads) < sec_increase * 1.1) {
@@ -319,25 +362,31 @@ export async function main(ns) {
 		const little_target = targets[1];
 
 		// determines threads needed for grow hack and weaken to maintain optimal profit
-		const grow_threads = Math.floor(ns.growthAnalyze(hack_target, 2));
+		let grow_threads = 0;
+		grow_threads = ns.growthAnalyze(hack_target, 2);
+		grow_threads = Math.floor(grow_threads);
         //For some reason it does not round threads correctly, this is a quick fix
-        var test_grow_threads = grow_threads - Math.floor(grow_threads);
-        if ( test_grow_threads > 0 ) {
-            //throw(Error("Rounding issue on hack_threads left ", test_hack_threads));
-            ns.print("Error in rounding determining grow_threads, fixing number ", grow_threads);
-            grow_threads = Math.floor(grow_threads);
-            ns.print("(re-)Rounded grow_threads to ", grow_threads);
-            await ns.sleep("5000");
-        }
-		const hack_threads = Math.floor(ns.hackAnalyzeThreads(hack_target, ns.getServerMoneyAvailable(hack_target) / 2));
+        //var test_grow_threads = grow_threads - Math.floor(grow_threads);
+        //if ( test_grow_threads > 0 ) {
+        //    //throw(Error("Rounding issue on hack_threads left ", test_hack_threads));
+        //    ns.print("Error in rounding determining grow_threads, fixing number ", grow_threads);
+        //    grow_threads = Math.floor(grow_threads);
+        //    ns.print("(re-)Rounded grow_threads to ", grow_threads);
+        //    await ns.sleep("5000");
+        //}
+		let hack_threads = 0;
+		hack_threads = ns.hackAnalyzeThreads(hack_target, ns.getServerMoneyAvailable(hack_target) / 2);
+		hack_threads = Math.floor(hack_threads);
+		
 		const sec_increase = ns.hackAnalyzeSecurity(hack_threads) + ns.growthAnalyzeSecurity(grow_threads);
 		let weaken_threads = 1;
 		
 		while (ns.weakenAnalyze(weaken_threads) < sec_increase * 1.1) {
 			weaken_threads += 5;
-            ns.print("// weakenAnalyze, needed threads :", weaken_threads);
-			await ns.sleep(1);
+			//await ns.sleep(1);
 		}
+		ns.print("// Threads needed: weaken: ", weaken_threads, ", grow: ", grow_threads, ', hack: ', hack_threads);
+		await ns.sleep(3000);
 
 		// determines needed RAM for a cycle of grow weaken hack with determined threads
 		const needed_ram = (grow_threads * ns.getScriptRam('targeted-grow.js', 'home') + hack_threads * ns.getScriptRam('targeted-hack.js', 'home') + weaken_threads * ns.getScriptRam('targeted-weaken.js', 'home'));
@@ -346,185 +395,213 @@ export async function main(ns) {
 		// note only Purchased servers are going to reliably have enough RAM
 		let purchased_servers = ns.getPurchasedServers();
 		let host_servers = [];
+		const white_list = ["home", "pserv-13","pserv-14"];
 
-		purchased_servers.forEach(server => {
-			if (ns.getServerMaxRam(server) - ns.getServerUsedRam(server) >= needed_ram) {
-				host_servers.push(server);
+		for (const server of purchased_servers) {
+		//purchased_servers.forEach(server => {
+			
+			// Skip server if a white list exists and the server is not in the white list.
+			if (typeof white_list !== 'undefined' && !(white_list.includes(server))) {
+				ns.print("  WhiteList: Excluded worker ", server);
+				continue;
 			}
-		})
+			if (typeof black_list !== 'undefined' && (black_list.includes(server))) {
+				ns.print("  BlackList: Excluded worker ", server);
+				continue;
+			}
+
+			if (!(ns.getServerMaxRam(server) - ns.getServerUsedRam(server) >= needed_ram)) {
+				ns.print("  NotEnoughRAM: Excluded worker ", server);
+				continue;
+			}
+
+			host_servers.push(server);
+		}//)
 
 		if (ns.getServerMaxRam('home') - ns.getServerUsedRam('home') - reserved_RAM >= needed_ram) {
 			host_servers.push('home');
 		}
 
 		if (host_servers.length == 0) {
-			// prepares target to be hacked uses home to weaken and grow server to required initial conditions
-			const initial_growth_amount = .5 * ns.getServerMaxMoney(little_target) / ns.getServerMoneyAvailable(little_target);
-			let gt = 0;
-
-			if (initial_growth_amount > 1 && isFinite(initial_growth_amount)) {
-				gt = ns.growthAnalyze(little_target, initial_growth_amount);
-			}
-
-			let wt = 0;
-			while (ns.weakenAnalyze(wt) < ns.getServerSecurityLevel(little_target) + ns.growthAnalyzeSecurity(gt) - ns.getServerMinSecurityLevel(little_target)) {
-				wt++;
-			}
-			if (wt == 0) {
-				wt = 1;
-			}
-
-			let prep = 1;
-			const prep_RAM = ns.getScriptRam('targeted-grow.js', 'home') * gt + ns.getScriptRam('targeted-weaken.js', 'home') * wt;
-			const prep_server = host_servers.find(server => {
-				if (server == 'home') {
-					return ns.getServerMaxRam('home') - ns.getServerUsedRam('home') - reserved_RAM >= prep_RAM;
-				}
-				else {
-					return ns.getServerMaxRam(server) - ns.getServerUsedRam(server) >= prep_RAM
-				}
-			});
-
-			if (prep_server == null) {
-				prep = 0;
-			}
-
-			if (prep) {
-                ns.print("// Prepping home (using home?)", prep_server);
-                //await little_prep(ns, little_target, wt, gt, reserved_RAM); //Prep also a server when newly added?
-                await ns.sleep("8000");
-				if (gt > 1) {
-					ns.exec('targeted-grow.js', prep_server, gt, gt, 0, little_target);
-					ns.exec('targeted-weaken.js', prep_server, wt, wt, little_target);
-					await ns.sleep(ns.getWeakenTime(little_target) + 1000);
-				}
-
-				else if (ns.getServerSecurityLevel(little_target) > ns.getServerMinSecurityLevel(little_target) * 1.5) {
-					ns.exec('targeted-weaken.js', prep_server, wt, wt, little_target);
-					await ns.sleep(ns.getWeakenTime(little_target) + 1000);
-				}
-			}
-
-			else if (gt > 1 || ns.getServerSecurityLevel(little_target) > ns.getServerMinSecurityLevel(little_target) * 1.5) {
-				await little_prep(ns, little_target, wt, gt, reserved_RAM);
-				await ns.sleep(ns.getWeakenTime(little_target) + 1000);
-			}
-
-			await little_hack(ns, little_target, weaken_threads, grow_threads, hack_threads, reserved_RAM);
-			await ns.sleep(ns.getWeakenTime(little_target) + 1000);
+			await ns.sleep(ns.getWeakenTime(hack_target) + 1000);
+			//await ns.sleep(10000);
+			continue;
 		}
 
-		else {
-			// prepares target to be hacked uses home to weaken and grow server to required initial conditions
-			const initial_growth_amount = .5 * ns.getServerMaxMoney(hack_target) / ns.getServerMoneyAvailable(hack_target);
-			let gt = 0;
-			if (initial_growth_amount > 1) {
-				gt = ns.growthAnalyze(hack_target, initial_growth_amount);
+		// if (host_servers.length == 0) {
+		// 	// prepares target to be hacked uses home to weaken and grow server to required initial conditions
+		// 	const initial_growth_amount = .5 * ns.getServerMaxMoney(little_target) / ns.getServerMoneyAvailable(little_target);
+		// 	let gt = 0;
+
+		// 	if (initial_growth_amount > 1 && isFinite(initial_growth_amount)) {
+		// 		gt = ns.growthAnalyze(little_target, initial_growth_amount);
+		// 	}
+
+		// 	let wt = 0;
+		// 	while (ns.weakenAnalyze(wt) < ns.getServerSecurityLevel(little_target) + ns.growthAnalyzeSecurity(gt) - ns.getServerMinSecurityLevel(little_target)) {
+		// 		wt++;
+		// 	}
+		// 	if (wt == 0) {
+		// 		wt = 1;
+		// 	}
+
+		// 	let prep = 1;
+		// 	const prep_RAM = ns.getScriptRam('targeted-grow.js', 'home') * gt + ns.getScriptRam('targeted-weaken.js', 'home') * wt;
+		// 	const prep_server = host_servers.find(server => {
+		// 		if (server == 'home') {
+		// 			return ns.getServerMaxRam('home') - ns.getServerUsedRam('home') - reserved_RAM >= prep_RAM;
+		// 		}
+		// 		else {
+		// 			return ns.getServerMaxRam(server) - ns.getServerUsedRam(server) >= prep_RAM
+		// 		}
+		// 	});
+
+		// 	if (prep_server == null) {
+		// 		prep = 0;
+		// 	}
+
+		// 	if (prep) {
+        //         ns.print("// Prepping home (using home?)", prep_server);
+        //         //await little_prep(ns, little_target, wt, gt, reserved_RAM); //Prep also a server when newly added?
+        //         await ns.sleep("8000");
+		// 		if (gt > 1) {
+		// 			ns.exec('targeted-grow.js', prep_server, gt, gt, 0, little_target);
+		// 			ns.exec('targeted-weaken.js', prep_server, wt, wt, little_target);
+		// 			//await ns.sleep(ns.getWeakenTime(little_target) + 2000);
+		// 			await ns.sleep(2000);
+		// 		}
+
+		// 		else if (ns.getServerSecurityLevel(little_target) > ns.getServerMinSecurityLevel(little_target) * 1.5) {
+		// 			ns.exec('targeted-weaken.js', prep_server, wt, wt, little_target);
+		// 			//await ns.sleep(ns.getWeakenTime(little_target) + 2000);
+		// 			await ns.sleep(2000);
+		// 		}
+		// 	}
+
+		// 	else if (gt > 1 || ns.getServerSecurityLevel(little_target) > ns.getServerMinSecurityLevel(little_target) * 1.5) {
+		// 		await little_prep(ns, little_target, wt, gt, reserved_RAM);
+		// 		//await ns.sleep(ns.getWeakenTime(little_target) + 2000);
+		// 		await ns.sleep(2000);
+		// 	}
+
+		// 	await little_hack(ns, little_target, weaken_threads, grow_threads, hack_threads, reserved_RAM);
+		// 	await ns.sleep(ns.getWeakenTime(little_target) + 2000);
+		// }
+
+		//else {
+		
+		// prepares target to be hacked uses home to weaken and grow server to required initial conditions
+		const initial_growth_amount = .5 * ns.getServerMaxMoney(hack_target) / ns.getServerMoneyAvailable(hack_target);
+		let gt = 0;
+		if (initial_growth_amount > 1) {
+			gt = ns.growthAnalyze(hack_target, initial_growth_amount);
+		}
+
+		let wt = 0;
+		while (ns.weakenAnalyze(wt) < ns.getServerSecurityLevel(hack_target) + ns.growthAnalyzeSecurity(gt) - ns.getServerMinSecurityLevel(hack_target)) {
+			wt++;
+		}
+		if (wt == 0) {
+			wt = 1;
+		}
+
+		let prep = 1;
+		const prep_RAM = ns.getScriptRam('targeted-grow.js', 'home') * gt + ns.getScriptRam('targeted-weaken.js', 'home') * wt;
+		const prep_server = host_servers.find(server => {
+			if (server == 'home') {
+				return ns.getServerMaxRam('home') - ns.getServerUsedRam('home') - reserved_RAM >= prep_RAM;
+			}
+			else {
+				return ns.getServerMaxRam(server) - ns.getServerUsedRam(server) >= prep_RAM
+			}
+		});
+		if (prep_server == null) {
+			prep = 0;
+		}
+
+		if (prep) {
+			ns.print("// Prepping server (using servers?)", prep_server);
+			await ns.scp('targeted-grow.js', prep_server);
+			await ns.scp('targeted-weaken.js', prep_server);
+			if (gt > 1) {
+				gt = Math.floor(gt) // dirty fix for filtering out strange decimal number errors?
+				ns.exec('targeted-grow.js', prep_server, gt, gt, 0, hack_target);
+				ns.exec('targeted-weaken.js', prep_server, wt, wt, hack_target);
+				//await ns.sleep(ns.getWeakenTime(hack_target) + 2000);
+				await ns.sleep(2000);
+			}
+			else if (ns.getServerSecurityLevel(hack_target) > ns.getServerMinSecurityLevel(hack_target) * 1.5) {
+				ns.exec('targeted-weaken.js', prep_server, wt, wt, hack_target);
+				//await ns.sleep(ns.getWeakenTime(hack_target) + 2000);
+				await ns.sleep(2000);
+			}
+		}
+		else if (gt > 1 || ns.getServerSecurityLevel(hack_target) > ns.getServerMinSecurityLevel(hack_target) * 1.5) {
+			little_prep(ns, hack_target, wt, gt, reserved_RAM); // removed await to keep going
+			//await ns.sleep(ns.getWeakenTime(hack_target) + 1000);
+			await ns.sleep(1000);
+		}
+
+		// sets a variable to keep track of time taken executing hacks in the loop
+		// if a hack were initiated later than the reset time the first hack would complete changing hack times for every hack following it throwing off the sync
+		// most of the time execution time doesn't take that long but this safeguards overly draining a target through desync
+		let initial_time = Date.now();
+		let k = 0;
+
+		for (let i = 0; i < host_servers.length; i++) {
+
+			let weaken_time = ns.getWeakenTime(hack_target);
+			let grow_time = ns.getGrowTime(hack_target);
+			let hack_time = ns.getHackTime(hack_target);
+			let grow_delay = weaken_time - grow_time - 2;
+			let hack_delay = weaken_time - hack_time - 1;
+
+			// assigns a server from the host server list and determines amount of cycles possible
+			let server = host_servers[i]
+			let n = 0;
+			if (server == 'home') {
+				n = Math.floor((ns.getServerMaxRam(server) - ns.getServerUsedRam(server) - reserved_RAM) / needed_ram);
+			}
+			else {
+				n = Math.floor((ns.getServerMaxRam(server) - ns.getServerUsedRam(server)) / needed_ram);
 			}
 
-			let wt = 0;
-			while (ns.weakenAnalyze(wt) < ns.getServerSecurityLevel(hack_target) + ns.growthAnalyzeSecurity(gt) - ns.getServerMinSecurityLevel(hack_target)) {
-				wt++;
-			}
-			if (wt == 0) {
-				wt = 1;
-			}
+			// writes needed scripts to host server
+			await ns.scp('targeted-grow.js', server);
+			await ns.scp('targeted-hack.js', server);
+			await ns.scp('targeted-weaken.js', server);
 
-			let prep = 1;
-			const prep_RAM = ns.getScriptRam('targeted-grow.js', 'home') * gt + ns.getScriptRam('targeted-weaken.js', 'home') * wt;
-			const prep_server = host_servers.find(server => {
-				if (server == 'home') {
-					return ns.getServerMaxRam('home') - ns.getServerUsedRam('home') - reserved_RAM >= prep_RAM;
-				}
-				else {
-					return ns.getServerMaxRam(server) - ns.getServerUsedRam(server) >= prep_RAM
-				}
-			});
-			if (prep_server == null) {
-				prep = 0;
-			}
-
-			if (prep) {
-                ns.print("// Prepping server (using servers?)", prep_server);
-                await ns.scp('targeted-grow.js', prep_server);
-                await ns.scp('targeted-weaken.js', prep_server);
-				if (gt > 1) {
-                    gt = Math.floor(gt) // dirty fix for filtering out strange decimal number errors?
-					ns.exec('targeted-grow.js', prep_server, gt, gt, 0, hack_target);
-					ns.exec('targeted-weaken.js', prep_server, wt, wt, hack_target);
-					await ns.sleep(ns.getWeakenTime(hack_target) + 1000);
-				}
-
-				else if (ns.getServerSecurityLevel(hack_target) > ns.getServerMinSecurityLevel(hack_target) * 1.5) {
-					ns.exec('targeted-weaken.js', prep_server, wt, wt, hack_target);
-					await ns.sleep(ns.getWeakenTime(hack_target) + 1000);
-				}
-			}
-
-			else if (gt > 1 || ns.getServerSecurityLevel(hack_target) > ns.getServerMinSecurityLevel(hack_target) * 1.5) {
-				await little_prep(ns, hack_target, wt, gt, reserved_RAM);
-				await ns.sleep(ns.getWeakenTime(hack_target) + 1000);
-			}
-			// sets a variable to keep track of time taken executing hacks in the loop
-			// if a hack were initiated later than the reset time the first hack would complete changing hack times for every hack following it throwing off the sync
-			// most of the time execution time doesn't take that long but this safeguards overly draining a target through desync
-			let initial_time = Date.now();
-			let k = 0;
-
-			for (let i = 0; i < host_servers.length; i++) {
-
-				let weaken_time = ns.getWeakenTime(hack_target);
-				let grow_time = ns.getGrowTime(hack_target);
-				let hack_time = ns.getHackTime(hack_target);
-				let grow_delay = weaken_time - grow_time - 2;
-				let hack_delay = weaken_time - hack_time - 1;
-
-				// assigns a server from the host server list and determines amount of cycles possible
-				let server = host_servers[i]
-				let n = 0;
-				if (server == 'home') {
-					n = Math.floor((ns.getServerMaxRam(server) - ns.getServerUsedRam(server) - reserved_RAM) / needed_ram);
-				}
-				else {
-					n = Math.floor((ns.getServerMaxRam(server) - ns.getServerUsedRam(server)) / needed_ram);
-				}
-
-				// writes needed scripts to host server
-				await ns.scp('targeted-grow.js', server);
-				await ns.scp('targeted-hack.js', server);
-				await ns.scp('targeted-weaken.js', server);
-
-				// loops through a cycle of grow weaken and hack executions on the target
-				// each script will complete in order of grow hack weaken 2 milliseconds apart
-				while (n > 0) {
-					if (Date.now() >= initial_time + ns.getHackTime(hack_target)) {
-						while (ns.getServerMaxRam(host_servers[k]) - ns.getServerUsedRam(host_servers[k]) < ns.getScriptRam('targeted-weaken', 'home') * weaken_threads) {
-							k++;
-							if (k == host_servers.length) {
-								k = 0;
-								await ns.sleep(10000);
-							}
+			// loops through a cycle of grow weaken and hack executions on the target
+			// each script will complete in order of grow hack weaken 2 milliseconds apart
+			while (n > 0) {
+				if (Date.now() >= initial_time + ns.getHackTime(hack_target)) {
+					while (ns.getServerMaxRam(host_servers[k]) - ns.getServerUsedRam(host_servers[k]) < ns.getScriptRam('targeted-weaken', 'home') * weaken_threads) {
+						k++;
+						if (k == host_servers.length) {
+							k = 0;
+							await ns.sleep(10000);
 						}
-						ns.exec('targeted-weaken.js', host_servers[k], weaken_threads, weaken_threads, hack_target);
-						await ns.sleep(weaken_time + 20);
-						i = 0;
-						initial_time = Date.now();
-						break
 					}
-                    
-					ns.exec('targeted-weaken.js', server, weaken_threads, weaken_threads, hack_target, n);
-					ns.exec('targeted-grow.js', server, grow_threads, grow_threads, grow_delay, hack_target, n);
-					ns.exec('targeted-hack.js', server, hack_threads, hack_threads, hack_delay, hack_target, n);
-					await ns.sleep(3);
-
-					n--;
+					ns.exec('targeted-weaken.js', host_servers[k], weaken_threads, weaken_threads, hack_target);
+					await ns.sleep(weaken_time + 20);
+					i = 0;
+					initial_time = Date.now();
+					break
 				}
+				
+				ns.exec('targeted-weaken.js', server, weaken_threads, weaken_threads, hack_target, n);
+				ns.exec('targeted-grow.js', server, grow_threads, grow_threads, grow_delay, hack_target, n);
+				ns.exec('targeted-hack.js', server, hack_threads, hack_threads, hack_delay, hack_target, n);
+				await ns.sleep(3);
 
-				await ns.sleep(5);
+				n--;
 			}
 
-			await ns.sleep(10);
+			await ns.sleep(5);
 		}
+
+		await ns.sleep(10);
+		//}
 	}
     
 };
