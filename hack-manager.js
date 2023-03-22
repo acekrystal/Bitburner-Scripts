@@ -30,7 +30,7 @@ export function best_target(ns, arr) {
             ns.print ("\\ Adding potential server ", server, "to the list");
 		}
 	})
-
+//test
 
 	list.forEach((target, i) => {
 		results[i] = ns.getServerMaxMoney(target);
