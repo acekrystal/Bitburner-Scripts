@@ -61,7 +61,7 @@ export async function main(ns, numServers = ns.args[0]) {
 
 			while (ns.getPurchasedServers().length < maxServers) {
 				if (ns.getServerMoneyAvailable('home') > ns.getPurchasedServerCost(ram)) {
-					let host = 'pserv-' + ns.getPurchasedServers().length;
+					let host = 'AcEcore-' + ns.getPurchasedServers().length;
 					ns.purchaseServer(host, ram);
 				}
 			}
@@ -71,7 +71,7 @@ export async function main(ns, numServers = ns.args[0]) {
 	} else {
 		while (ns.getPurchasedServers().length < maxServers) {
 			if (ns.getServerMoneyAvailable('home') > ns.getPurchasedServerCost(ram)) {
-				let host = 'pserv-' + ns.getPurchasedServers().length;
+				let host = 'AcEcore' + ns.getPurchasedServers().length;
 				ns.purchaseServer(host, ram);
 			}
 		}
