@@ -1,0 +1,23 @@
+// How much RAM each purchased server will have. In this case, it'll
+// be 8GB.
+//var ram = 1048576; // 524288 262144
+var ram = getPurchasedServerMaxRam()
+// Iterator we'll use for our loop
+var i = 10;
+
+// Continuously try to purchase servers until we've reached the maximum
+// amount of servers
+while (i < getPurchasedServerLimit() /*&& i < 10*/) {
+    // Check if we have enough money to purchase a server
+    if (getServerMoneyAvailable("home") > getPurchasedServerCost(ram)) {
+        // If we have enough money, then:
+        //  1. Purchase the server
+        //  2. Copy our hacking script onto the newly-purchased server
+        //  3. Run our hacking script on the newly-purchased server with 3 threads
+        //  4. Increment our iterator to indicate that we've bought a new server
+        var hostname = purchaseServer("Gen1-CheetahWorker0" + i, ram);
+        //scp("target/omega.script", hostname);
+        //exec("target/omega.script", hostname, 3150);
+        ++i;
+    }
+}
