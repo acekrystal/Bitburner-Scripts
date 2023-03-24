@@ -366,7 +366,7 @@ export async function main(ns) {
 			throw(Error("Error in rounding determining grow_threads, fixing number ", grow_threads));
             await ns.sleep("5000");
         }
-		const hack_threads = Math.floor(ns.hackAnalyzeThreads(hack_target, ns.getServerMoneyAvailable(hack_target) / 2));
+		var hack_threads = Math.floor(ns.hackAnalyzeThreads(hack_target, ns.getServerMoneyAvailable(hack_target) / 2));
 		if(hack_threads === Infinity){
             ns.print('infinity detected! BOOO, doing manual fix'); // It seems we can get "infinity" as a return from ns.hackAnalyzeThreads when money is low ~$321
             hack_threads = 1;
@@ -531,8 +531,8 @@ export async function main(ns) {
 				let weaken_time = ns.getWeakenTime(hack_target);
 				let grow_time = ns.getGrowTime(hack_target);
 				let hack_time = ns.getHackTime(hack_target);
-				let grow_delay = weaken_time - grow_time - 2;
-				let hack_delay = weaken_time - hack_time - 1;
+				let grow_delay = weaken_time - grow_time - 60; // Finish grow 4ms before the long weaken script finishes
+				let hack_delay = weaken_time - hack_time - 30; // Finish hack 2ms before the long weaken script, but 2ms after the grow script so we can take its moneyzzz
 
 				// determines amount of cycles possible on current selected server
 				let server = host_servers[i]
@@ -554,7 +554,7 @@ export async function main(ns) {
 				// loops through a cycle of grow weaken and hack executions on the target
 				// each script will complete in order of grow hack weaken 2 milliseconds apart
 				while (n > 0) {
-					if (Date.now() >= initial_time + ns.getHackTime(hack_target)) {
+					if (Date.now() >= (initial_time + ns.getHackTime(hack_target) + hack_delay - 5000)) { // here we check if we are still starting new scripts while the first scripts start to finish.
 						while (ns.getServerMaxRam(host_servers[k]) - ns.getServerUsedRam(host_servers[k]) < ns.getScriptRam('targeted-weaken', 'home') * weaken_threads) {
 							k++;
 							if (k == host_servers.length) {
@@ -563,6 +563,7 @@ export async function main(ns) {
 							}
 						}
 						ns.exec('targeted-weaken.js', host_servers[k], weaken_threads, weaken_threads, hack_target);
+						ns.print("Hack time : ", ns.getHackTime(hack_target), " delayed with: ", hack_delay, "started x", Date.now()-initial_time," seconds ago");
 						ns.print("sleeping for weaken time: ", Math.ceil(((((weaken_time+20)/1000)/60))*100)/100, " setup interrupted as we close in on first hack timers finishing");
 						await ns.sleep(weaken_time + 20);
 						i = 0;
@@ -570,10 +571,21 @@ export async function main(ns) {
 						break
 					}
                     
-					ns.exec('targeted-weaken.js', server, weaken_threads, weaken_threads, hack_target, n);
+					/*ns.exec('targeted-weaken.js', server, weaken_threads, weaken_threads, hack_target, n);
 					ns.exec('targeted-grow.js', server, grow_threads, grow_threads, grow_delay, hack_target, n);
-					ns.exec('targeted-hack.js', server, hack_threads, hack_threads, hack_delay, hack_target, n);
-					await ns.sleep(3);
+					ns.exec('targeted-hack.js', server, hack_threads, hack_threads, hack_delay, hack_target, n); */
+					// We are unsure if execution of large amount of scripts can cause the order of scripts to not be correct.
+					// For this we changed the execution of scripts in order
+					ns.exec('targeted-grow.js', server, grow_threads, grow_threads, grow_delay, hack_target, n);
+					await ns.sleep(1);
+					if(hack_threads){
+						ns.exec('targeted-hack.js', server, hack_threads, hack_threads, hack_delay, hack_target, n);
+						await ns.sleep(1);
+					}
+					ns.exec('targeted-weaken.js', server, weaken_threads, weaken_threads, hack_target, n);
+					await ns.sleep(1);
+					await ns.sleep(90); // Part of this time is preventing batches form colliding with another as grow and hack finish a bit earlier. See grow_delay and hack_delay times. We also add a bit of processing space to hopefully help with propper order of execution.
+
 
 					n--;
 				}
@@ -586,6 +598,8 @@ export async function main(ns) {
 	}
     
 };
+
+
 
 
 // on wake-up: line 848 exec grow thread interter has many decimals
