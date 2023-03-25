@@ -214,10 +214,10 @@ async function little_hack(ns, hack_target, weaken_threads, grow_threads, hack_t
         }
         sec_increase = ns.hackAnalyzeSecurity(hack_threads) + ns.growthAnalyzeSecurity(grow_threads);
 		weaken_threads = 1;
-		while (ns.weakenAnalyze(weaken_threads) < sec_increase * 1.1) {
+		while (ns.weakenAnalyze(weaken_threads) < sec_increase * catch_up_rate) {
 			weaken_threads += 3;
             //ns.print("// 1st increasing weaken_threads for ", hack_target," to ", weaken_threads);
-			ns.print("// Little_Hack weakenAnalyze: ", weaken_threads, " weaken threads cancel ", ns.weakenAnalyze(weaken_threads), "sec. on target:",hack_target ," with current sec:" , sec_increase * 1.1)
+			ns.print("// Little_Hack weakenAnalyze: ", weaken_threads, " weaken threads cancel ", ns.weakenAnalyze(weaken_threads), "sec. on target:",hack_target ," with current sec:" , sec_increase * catch_up_rate)
 			await ns.sleep(1);
 		}
         ns.print("// ??? usableRam problem?", hack_target);
@@ -310,10 +310,10 @@ async function little_hack(ns, hack_target, weaken_threads, grow_threads, hack_t
                 } 
 				sec_increase = ns.hackAnalyzeSecurity(hack_threads) + ns.growthAnalyzeSecurity(grow_threads);
 				weaken_threads = 1;
-				while (ns.weakenAnalyze(weaken_threads) < sec_increase * 1.1) {
+				while (ns.weakenAnalyze(weaken_threads) < sec_increase * catch_up_rate) {
 					weaken_threads += 3;
                     //ns.print("// 2nd increasing weaken_threads for ", hack_target," ", weaken_threads);
-					ns.print("// 2nd weakenAnalyze: ", weaken_threads, " weaken threads cancels ", ns.weakenAnalyze(weaken_threads), "sec. on target:",hack_target ," with current sec:" , sec_increase * 1.1)
+					ns.print("// 2nd weakenAnalyze: ", weaken_threads, " weaken threads cancels ", ns.weakenAnalyze(weaken_threads), "sec. on target:",hack_target ," with current sec:" , sec_increase * catch_up_rate)
 					await ns.sleep(1);
 				}
 				n++;
@@ -327,7 +327,7 @@ async function little_hack(ns, hack_target, weaken_threads, grow_threads, hack_t
 	}
 };
 
-export async function main(ns) {
+export async function main(ns, manualTarget = ns.args[0], partymode = ns.args[1]) {
 	ns.disableLog("sleep");
 	ns.disableLog("getHackingLevel");
 	ns.disableLog("getServerRequiredHackingLevel");
@@ -338,49 +338,71 @@ export async function main(ns) {
 	ns.disableLog("getServerSecurityLevel");
 	ns.disableLog("getServerMinSecurityLevel");
 	ns.disableLog("scp");
+	ns.print("Party mode = ", partymode)
+	ns.print("manualTarget = ", manualTarget)
 	
 	let reserved_RAM = ns.args[0];
 	if (reserved_RAM == null) {
 		reserved_RAM = 0;
+	}
+
+	if (partymode == "party"){
+		var catch_up_rate = 4; // 20 means we can have ~20x hack scripts firing out of order while 1 weaken instance has enough threads to solve this on its own.
+		var multiplyMonyToMax = 20						// This will eat more RAM, but RAM does not longer seems to be the problem at this rate, corrupted execution order are.
+	} else {
+		var catch_up_rate = 1.1;
+		var multiplyMonyToMax = 2
 	}
 	while (true) {
 		let full_list = multiscan(ns, 'home');
         ns.print ("//Scanning for targets");
 		// finds most profitable server to target
 		const targets = best_target(ns, full_list);
-		const hack_target = targets[0]; //set hack target to the first from the best_target list
-		const little_target = targets[1]; //set little-hack target to 2nd from the best_target list
+		if (manualTarget == "best") {
+			var hack_target = targets[0]; //set hack target to the first from the best_target list
+			var little_target = targets[1]; //set little-hack target to 2nd from the best_target list
+		} else {
+			ns.print("Manual server targeting overwrite! Targeting : ", manualTarget);
+			var hack_target = manualTarget; //set hack target to the first from the best_target list
+			var little_target = manualTarget; //set little-hack target to 2nd from the best_target list
+		}
 		ns.print("☠ --> Main hack target: ", hack_target, " seclvl:", ns.getServerSecurityLevel(hack_target), "/", ns.getServerMinSecurityLevel(hack_target), " $", ns.getServerMoneyAvailable(hack_target), "/$", ns.getServerMaxMoney(hack_target) );
 		ns.print("☠ --> Little hack target: ", little_target, " seclvl:", ns.getServerSecurityLevel(little_target), "/", ns.getServerMinSecurityLevel(little_target), " $", ns.getServerMoneyAvailable(hack_target), "/$", ns.getServerMaxMoney(hack_target) );
 		await ns.sleep(5000); //added for readability on startup
 		
-		// Main hack target processing
-		// determines threads needed to grow server to ?max? size.
-		const grow_threads = Math.floor( (ns.growthAnalyze(hack_target, 2)) );
+		// Main hack target calculating  -------------------------------------------------
+		// determines threads needed for grow hack and weaken to maintain optimal profit
+
+		// Estimate how many times we need to multiply current amount of money on target to reache close to max possible money amount
+		//const multiplyMonyToMax = ns.getServerMaxMoney(hack_target) / (ns.getServerMoneyAvailable(hack_target) + 0.1)
+		// growthAnalyze takes how many times you want to multiply the current amount of money on target and returns how many grow_threads you need.
+		//const grow_threads = Math.round( (ns.growthAnalyze(hack_target, (multiplyMonyToMax * 1.1))) );
+		const grow_threads = Math.round( ns.growthAnalyze(hack_target, multiplyMonyToMax) );
         //For some reason it does not round threads correctly, this is a quick fix
-        var test_grow_threads = grow_threads - Math.floor(grow_threads);
+        /*var test_grow_threads = grow_threads - Math.floor(grow_threads);
         if ( test_grow_threads > 0 ) {
             ns.print("Error in rounding determining grow_threads, fixing number ", grow_threads);
             grow_threads = Math.floor(grow_threads);
             ns.print("(re-)Rounded grow_threads to ", grow_threads);
 			throw(Error("Error in rounding determining grow_threads, fixing number ", grow_threads));
             await ns.sleep("5000");
-        }
-		var hack_threads = Math.floor(ns.hackAnalyzeThreads(hack_target, ns.getServerMoneyAvailable(hack_target) / 2));
-		if(hack_threads === Infinity){
-            ns.print('infinity detected! BOOO, doing manual fix'); // It seems we can get "infinity" as a return from ns.hackAnalyzeThreads when money is low ~$321
+        }*/
+		//var hack_threads = Math.floor(ns.hackAnalyzeThreads(hack_target, ns.getServerMoneyAvailable(hack_target) / 2));
+		var hack_threads = Math.floor(ns.hackAnalyzeThreads(hack_target, (ns.getServerMaxMoney(hack_target) / 1.2)));
+		if(hack_threads === Infinity || hack_threads < 1){
+            ns.print('hack_threads = ', hack_threads, ' but should be >1! BOOO, it wasdoing manual fix'); // It seems we can get "infinity" as a return from ns.hackAnalyzeThreads when money is low ~$321
             hack_threads = 1;
         }
+		
+		// Calculate excpected security increase and the amount of weaken threads to cancel this. We give a catch-up-rate to catch some unexpected higher sec_increase rates
 		const sec_increase = ns.hackAnalyzeSecurity(hack_threads) + ns.growthAnalyzeSecurity(grow_threads);
 		let weaken_threads = 1;
-		weaken_threads = Math.ceil((sec_increase * 1.1) / 0.1) //seems to be around 0.05 - 0.25/p 5 threads?
+		weaken_threads = Math.ceil((sec_increase * catch_up_rate) / 0.1) //initial start value for quicker finish, seems to be around 0.05 - 0.25/p 5 threads?
 		
-
-
-		while (ns.weakenAnalyze(weaken_threads) < sec_increase * 1.1) {
+		while (ns.weakenAnalyze(weaken_threads) < sec_increase * catch_up_rate) {
 			weaken_threads += 5;
             //ns.print("// weakenAnalyze, needed threads :", weaken_threads, " Analyze = ", ns.weakenAnalyze(weaken_threads), " < sec_increase of ", sec_increase * 1.1);
-			ns.print("// weakenAnalyze: ", weaken_threads, " weaken threads cancel ", Math.floor((ns.weakenAnalyze(weaken_threads) * 100)) / 100, " security. This is < current seclvl: " , sec_increase * 1.1);
+			ns.print("// weakenAnalyze: ", weaken_threads, " weaken threads cancel ", Math.floor((ns.weakenAnalyze(weaken_threads) * 100)) / 100, " security. This is < current expected seclvl increase of: " , sec_increase * catch_up_rate, "/(", sec_increase, ")");
 			await ns.sleep(1);
 		}
 
@@ -404,7 +426,9 @@ export async function main(ns) {
 
 		if (host_servers.length == 0) {
 			// First time the script is running? Or server list is empty for some reason?
-			const initial_growth_amount = .5 * ns.getServerMaxMoney(little_target) / ns.getServerMoneyAvailable(little_target);
+			ns.print("Do I ever see this part of code? (host_servers.length == 0)");
+			await ns.sleep(999999999999999999999999999999);
+			const initial_growth_amount = .5 * ns.getServerMaxMoney(little_target) / (ns.getServerMoneyAvailable(little_target) + 0.1);
 			let gt = 0;
 
 			if (initial_growth_amount > 1 && isFinite(initial_growth_amount)) {
@@ -468,7 +492,8 @@ export async function main(ns) {
 
 		else {
 			// prepares target to be hacked uses home to weaken and grow server to required initial conditions
-			const initial_growth_amount = .5 * ns.getServerMaxMoney(hack_target) / ns.getServerMoneyAvailable(hack_target);
+			// !! grow thread calcuations seems very rudemantery, might need some looking into. Right now it can crash when available money == 0 as maxmoney can not be deviced by 0, so I added 0.1 as quick fix
+			var initial_growth_amount = .5 * ns.getServerMaxMoney(hack_target) / (ns.getServerMoneyAvailable(hack_target) + 0.1);
 			let gt = 0;
 			if (initial_growth_amount > 1) {
 				gt = ns.growthAnalyze(hack_target, initial_growth_amount);
@@ -491,7 +516,8 @@ export async function main(ns) {
 			}
 
 			if (prep) {
-                ns.print("// ?? Prepping target using server ", prep_server); // can be remote or home server
+                ns.print("// ?? Prepping target using server ", prep_server, "target sec-level = ", ns.getServerSecurityLevel(hack_target), "/", ns.getServerMinSecurityLevel(hack_target)); // can be remote or home server
+				ns.print("Server grow potential = $",ns.getServerMaxMoney(hack_target)-ns.getServerMoneyAvailable(hack_target) );
                 await ns.scp('targeted-grow.js', prep_server);
                 await ns.scp('targeted-weaken.js', prep_server);
 				if (gt > 1) {
@@ -499,7 +525,7 @@ export async function main(ns) {
 					ns.exec('targeted-grow.js', prep_server, gt, gt, 0, hack_target);
 					ns.exec('targeted-weaken.js', prep_server, wt, wt, hack_target);
 					//await ns.sleep(ns.getWeakenTime(hack_target) + 1000);
-					let waitTime=ns.getWeakenTime(hack_target) + 1000;
+					let waitTime=ns.getWeakenTime(hack_target) + 5000;
 					ns.print("2nd sleeping for ", Math.ceil((((waitTime/1000)/60))*100)/100, " minutes, grow and weaken prepping");
 					await ns.sleep(waitTime);
 				}
@@ -507,7 +533,7 @@ export async function main(ns) {
 				else if (ns.getServerSecurityLevel(hack_target) > ns.getServerMinSecurityLevel(hack_target) * 1.5) {
 					ns.exec('targeted-weaken.js', prep_server, wt, wt, hack_target);
 					//await ns.sleep(ns.getWeakenTime(hack_target) + 1000);
-					let waitTime=ns.getWeakenTime(hack_target) + 1000;
+					let waitTime=ns.getWeakenTime(hack_target) + 5000;
 					ns.print("2nd sleeping for ", Math.ceil((((waitTime/1000)/60))*100)/100, " minutes, only weaken prepping");
 					await ns.sleep(waitTime);
 				}
@@ -520,32 +546,49 @@ export async function main(ns) {
 				ns.print("sleeping for ", Math.ceil((((waitTime/1000)/60))*100)/100, " minutes");
 				await ns.sleep(waitTime);
 			}
-			// sets a variable to keep track of time taken executing hacks in the loop
-			// if a hack were initiated later than the reset time the first hack would complete changing hack times for every hack following it throwing off the sync
-			// most of the time execution time doesn't take that long but this safeguards overly draining a target through desync
+
+
+
+
 			let initial_time = Date.now();
 			let k = 0;
 			ns.print("Executing script using ", host_servers.length, " servers");
+			if (partymode == "party") { 
+				var interval = 1
+			} else {
+				var interval = 25
+			}
+
+			let EstimatedHackedMoney = 0;
+			let EstimatedCycleMoney = 0;
+			let EstimatedCycleMoneyPossible = 0;
+			let serverMaxMoney = Math.round(ns.getServerMaxMoney(hack_target));
+			let TTL_weaken = 0;
+			let TTL_grow = 0;
+			let TTL_hack = 0;
+			//let BatchLoopTime = 0
+			
+			// Main hack staging loop ------------------------------------------------------------ 
 			for (let i = 0; i < host_servers.length; i++) {
 
 				let weaken_time = ns.getWeakenTime(hack_target);
 				let grow_time = ns.getGrowTime(hack_target);
 				let hack_time = ns.getHackTime(hack_target);
-				let grow_delay = weaken_time - grow_time - 60; // Finish grow 4ms before the long weaken script finishes
-				let hack_delay = weaken_time - hack_time - 30; // Finish hack 2ms before the long weaken script, but 2ms after the grow script so we can take its moneyzzz
-
+				let grow_delay = weaken_time - grow_time - (interval * 2); // Finish grow 4ms before the long weaken script finishes
+				let hack_delay = weaken_time - hack_time - interval; // Finish hack 2ms before the long weaken script, but 2ms after the grow script so we can take its moneyzzz
+				//let LastLoopTime = Date.now(); // Keep track how long one Grow/Hack/Weaken batch take to setup
 				// determines amount of cycles possible on current selected server
 				let server = host_servers[i]
 				let n = 0;
 				if (server == 'home') {
 					n = Math.floor((ns.getServerMaxRam(server) - ns.getServerUsedRam(server) - reserved_RAM) / needed_ram);
-					ns.print("Server: ", server, "should handle ", n, " scripts batches of ", needed_ram, "RAM gt: ?? ht: ?? wt: ??" )
+					ns.print("Server: ", server, " should handle ", n, " scripts batches of ", needed_ram, "RAM gt: ?? ht: ?? wt: ??" )
 				}
 				else {
 					n = Math.floor((ns.getServerMaxRam(server) - ns.getServerUsedRam(server)) / needed_ram);
-					ns.print("Server: ", server, "should handle ", n, " scripts batches of ", needed_ram, "RAM gt: ?? ht: ?? wt: ??" )
+					ns.print("Server: ", server, " should handle ", n, " scripts batches of ", needed_ram, "RAM gt: ?? ht: ?? wt: ??" )
 				}
-
+				let starting_n = n;
 				// writes needed scripts to host server (if not already present)
 				await ns.scp('targeted-grow.js', server);
 				await ns.scp('targeted-hack.js', server);
@@ -553,41 +596,75 @@ export async function main(ns) {
 
 				// loops through a cycle of grow weaken and hack executions on the target
 				// each script will complete in order of grow hack weaken 2 milliseconds apart
+				let current_serverMaxRam = ns.getServerMaxRam(server)
 				while (n > 0) {
-					if (Date.now() >= (initial_time + ns.getHackTime(hack_target) + hack_delay - 5000)) { // here we check if we are still starting new scripts while the first scripts start to finish.
-						while (ns.getServerMaxRam(host_servers[k]) - ns.getServerUsedRam(host_servers[k]) < ns.getScriptRam('targeted-weaken', 'home') * weaken_threads) {
-							k++;
-							if (k == host_servers.length) {
-								k = 0;
-								await ns.sleep(10000);
+					if ( ( current_serverMaxRam - ns.getServerUsedRam(server)) <  (needed_ram) ) {
+						ns.print("Available RAM changed during staging, stopping rollout on current server and moving to next server.")
+						n=0;
+						break;
+					} else {
+						if (Date.now() >= (initial_time + grow_delay + grow_time - 25 )) { // here we check if we are still starting new scripts while the first scripts start to finish.
+							while (ns.getServerMaxRam(host_servers[k]) - ns.getServerUsedRam(host_servers[k]) < ns.getScriptRam('targeted-weaken', 'home') * weaken_threads) {
+								//?? does this part ensure we alway's run a last weaken script on a new server when we run out of staging time?
+								k++;
+								if (k == host_servers.length) {
+									k = 0;
+									await ns.sleep(10000);
+								}
 							}
+							ns.exec('targeted-weaken.js', host_servers[k], weaken_threads, weaken_threads, hack_target);
+							ns.print("Hack time = ", Math.ceil(((((ns.getHackTime(hack_target))/1000)/60))*100)/100, "min delayed with: ", Math.ceil((((hack_delay)/1000)/60)*100)/100, "min started x ", Math.ceil((((Date.now()-initial_time)/1000)/60)*100)/100," seconds ago");
+							ns.print("Calculated time between first and last exec staged :", (Date.now() - (initial_time + ns.getHackTime(hack_target) ) )/1000 );
+							const sleep_time = weaken_time + (hack_time) + 5000; // Min = weaken_time, hack_time gives extra time that scales with target to wait for late runners, 5 seconds give some base for lower level targets with really short hack times.
+							ns.print("sleeping for equelevant of weaken (", Math.ceil(((((weaken_time)/1000)/60))*100)/100, "min) + hack(", Math.ceil(((((hack_time)/1000)/60))*100)/100, "min) + 5sec = ", Math.ceil((((sleep_time) /1000)/60)*100)/100, "min sleep, staging was interrupted as we close in on first script finishing");
+							//await ns.sleep(weaken_time + 25);
+							await ns.sleep(sleep_time);
+							i = 0;
+							initial_time = Date.now();
+							EstimatedHackedMoney = 0;
+							EstimatedCycleMoney = 0;
+							EstimatedCycleMoneyPossible = 0;
+							break;
 						}
-						ns.exec('targeted-weaken.js', host_servers[k], weaken_threads, weaken_threads, hack_target);
-						ns.print("Hack time : ", ns.getHackTime(hack_target), " delayed with: ", hack_delay, "started x", Date.now()-initial_time," seconds ago");
-						ns.print("sleeping for weaken time: ", Math.ceil(((((weaken_time+20)/1000)/60))*100)/100, " setup interrupted as we close in on first hack timers finishing");
-						await ns.sleep(weaken_time + 20);
-						i = 0;
-						initial_time = Date.now();
-						break
-					}
-                    
-					/*ns.exec('targeted-weaken.js', server, weaken_threads, weaken_threads, hack_target, n);
-					ns.exec('targeted-grow.js', server, grow_threads, grow_threads, grow_delay, hack_target, n);
-					ns.exec('targeted-hack.js', server, hack_threads, hack_threads, hack_delay, hack_target, n); */
-					// We are unsure if execution of large amount of scripts can cause the order of scripts to not be correct.
-					// For this we changed the execution of scripts in order
-					ns.exec('targeted-grow.js', server, grow_threads, grow_threads, grow_delay, hack_target, n);
-					await ns.sleep(1);
-					if(hack_threads){
-						ns.exec('targeted-hack.js', server, hack_threads, hack_threads, hack_delay, hack_target, n);
-						await ns.sleep(1);
-					}
-					ns.exec('targeted-weaken.js', server, weaken_threads, weaken_threads, hack_target, n);
-					await ns.sleep(1);
-					await ns.sleep(90); // Part of this time is preventing batches form colliding with another as grow and hack finish a bit earlier. See grow_delay and hack_delay times. We also add a bit of processing space to hopefully help with propper order of execution.
+						
+						/*ns.exec('targeted-weaken.js', server, weaken_threads, weaken_threads, hack_target, n);
+						ns.exec('targeted-grow.js', server, grow_threads, grow_threads, grow_delay, hack_target, n);
+						ns.exec('targeted-hack.js', server, hack_threads, hack_threads, hack_delay, hack_target, n); */
+						// We are unsure if execution of large amount of scripts can cause the order of scripts to not be correct.
+						// For this we changed the execution of scripts in order
+						TTL_weaken = Math.round(( initial_time + weaken_time - Date.now())) /1000;
+						ns.exec('targeted-weaken.js', server, weaken_threads, weaken_threads, hack_target, n);
+						await ns.sleep(interval); 
+						
+						TTL_grow = Math.round(( initial_time + grow_time + grow_delay - Date.now())) /1000;
+						if (partymode == "party" && n < (starting_n * 0.02) || TTL_grow < ((hack_time/1000)/8) ) {
+							ns.print("Skipping: last grow sessions, (", TTL_grow, "<", ((hack_time/1000)/2), ") to help against corrupted execution orders and end cycle without needind prepping for next cycle");
+						} else {
+							ns.exec('targeted-grow.js', server, grow_threads, grow_threads, grow_delay, hack_target, n);
+							await ns.sleep(interval);
+						}
 
+						TTL_hack = Math.round(( initial_time + hack_time + hack_delay - Date.now())) /1000;
+						if (partymode == "party" && n < (starting_n * 0.04) || TTL_grow < ((hack_time/1000)/4) ) {
+							ns.print("Skipping: last hack sessions to help against corrupted execution orders and end cycle without needind prepping for next cycle");
+						} else {
+							ns.exec('targeted-hack.js', server, hack_threads, hack_threads, hack_delay, hack_target, n);
+							await ns.sleep(3*interval);
+						}
+						
+						EstimatedHackedMoney = Math.round((ns.getServerMoneyAvailable(hack_target) * ns.hackAnalyze(hack_target))/1000000);
+						EstimatedCycleMoney += EstimatedHackedMoney
+						EstimatedCycleMoneyPossible += Math.round((serverMaxMoney * ns.hackAnalyze(hack_target))/1000000);
+						//BatchLoopTime =  Date.now()/1000 - LastLoopTime;
+						//LastLoopTime = Date.now()/1000
+						await ns.print("TTL Weaken: ", TTL_weaken, "seconds ( total-start:", Math.ceil((((weaken_time/1000)/60))*100)/100, "/", (ns.getWeakenTime(hack_target)-weaken_time)/1000, " :total-live-diviation ) --- [ Sever security level = ", ns.getServerSecurityLevel(hack_target), " / ", ns.getServerMinSecurityLevel(hack_target), " ]" );
+						await ns.print("TTL Grow: ", TTL_grow, "seconds ( total-start:", Math.ceil((((grow_time/1000)/60))*100)/100, "/", (ns.getGrowTime(hack_target)-grow_time)/1000, " :total-live-diviation ) --- [ Money on server = $", Math.round((ns.getServerMoneyAvailable(hack_target))/1000000)/1000,"t / ", Math.round(serverMaxMoney/1000000)/1000, "t ]" );
+						await ns.print("TTL Hack: ", TTL_hack, "seconds ( total-start:", Math.ceil((((hack_time/1000)/60))*100)/100, "/", (ns.getHackTime(hack_target)-hack_time)/1000, " :total-live-diviation ) --- [  Estimated from hack +$", EstimatedHackedMoney, "m --> Total this cycle = $", EstimatedCycleMoney/1000, "t / ", EstimatedCycleMoneyPossible/1000, "t ]" );
+						//await ns.print("TTL Hack: ", (initial_time + hack_time + hack_delay - Date.now()) /1000, "seconds ( total-start:", Math.ceil((((hack_time/1000)/60))*100)/100, "/", (ns.getHackTime(hack_target)-hack_time)/1000, " :total-live-diviation ) --- [ ", BatchLoopTime/1000,"s Estimated ( ", Math.round((EstimatedHackedMoney/(BatchLoopTime/1000))*100)/100, "m/s) $", EstimatedHackedMoney, "m --> Total this cycle = $", EstimatedCycleMoney, "m / ", EstimatedCycleMoneyPossible, "m ]" );
 
-					n--;
+						
+						n--;
+					}
 				}
 
 				await ns.sleep(5);
