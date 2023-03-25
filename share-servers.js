@@ -1,10 +1,12 @@
 /** @param {NS} ns **/
-export async function main(ns, numServers = ns.args[0], threads = ns.args[1] = 0) {
+export async function main(ns, numServers = ns.args[0], threads = ns.args[1] ) {
     ns.disableLog("scp");
     //const nServer = ns.args[0]
     let usable_RAM = 0;
     let scriptmem = ns.getScriptRam('targeted-share.js', 'home');
     let totalThreads = 0;
+    ns.print("Number of threads argumnt = ", threads);
+
 
     if (numServers == "kill" || numServers == "Kill" || numServers == "KILL" || numServers == "0") {
         numServers = ns.getPurchasedServers().length
@@ -28,7 +30,7 @@ export async function main(ns, numServers = ns.args[0], threads = ns.args[1] = 0
         for ( let i = 0; i < numServers; i++) { 
             const hostServer = 'AcEcore-' + i;
             usable_RAM = Math.floor(ns.getServerMaxRam(hostServer)*0.99) - ns.getServerUsedRam(hostServer);
-            if (threads == 0) {
+            if (threads == undefined) {
                 //If no threadnumber given we will auto calculate max threads
                 threads = Math.floor(usable_RAM / scriptmem);
             }
