@@ -359,6 +359,12 @@ export async function main(ns) {
 			await ns.sleep(1);
 		}
 		ns.print("// Threads needed: weaken: ", weaken_threads, ", grow: ", grow_threads, ', hack: ', hack_threads);
+		
+		let threadModifier = 1.2;
+		weaken_threads = Math.floor((weaken_threads * (threadModifier * 4)))
+		grow_threads = Math.floor((grow_threads * (threadModifier * 2)))
+		hack_threads = Math.floor((hack_threads * threadModifier))
+		ns.print("// Threads needed after modifier: weaken: ", weaken_threads, ", grow: ", grow_threads, ', hack: ', hack_threads);
 		await ns.sleep(3000);
 
 		// determines needed RAM for a cycle of grow weaken hack with determined threads
@@ -466,6 +472,9 @@ export async function main(ns) {
 			let grow_delay = weaken_time - grow_time - 4; //2
 			let hack_delay = weaken_time - hack_time - 2; //1
 
+			let hack = true;
+			let grow = true;
+
 			// assigns a server from the host server list and determines amount of cycles possible
 			let server = host_servers[i]
 			let n = 0;
@@ -484,6 +493,9 @@ export async function main(ns) {
 			// loops through a cycle of grow weaken and hack executions on the target
 			// each script will complete in order of grow hack weaken 2 milliseconds apart
 			while (n > 0 || stopBatching == true) {
+				ns.print(' ');
+				ns.print("Starting batch ", batchCount, '...');
+
 				if (Date.now() >= initial_time + weaken_time - 1000) {
 					ns.print("Stopping batch scheduling. First batch is about to complete.");
 					stopBatching = true;
@@ -495,19 +507,34 @@ export async function main(ns) {
 					stopBatching = true;
 					break;
 				}
-
 				
-				// Start batching
-				if(batchCount < (batchLimit * 0.95) && (batchCount / 100 - Math.floor(batchCount / 100) !== 0)){
-					ns.exec('targeted-grow.js', server, grow_threads, grow_threads, grow_delay, hack_target, n);
+				if(batchCount >= (batchLimit * 0.95) || batchCount > 50 && batchCount / 50 - Math.floor(batchCount / 50) == 0){
+					grow = false;
+					ns.print("Skipping grow");
+				} else{
+					grow = true;
 				}
 
-				if(batchCount < (batchLimit * 0.9 ) && (batchCount / 100 - Math.floor(batchCount / 100) !== 0 && (batchCount % 2) == 0)){
+				if(batchCount >= (batchLimit * 0.9) || hack_target == 0 || (batchCount > 25 && batchCount / 25 - Math.floor(batchCount / 25) == 0)){
+					hack = false;
+					ns.print("Skipping hack");
+				} 	else {
+					hack = true;
+				}
+
+				// Start batching
+				if(grow){
+					ns.exec('targeted-grow.js', server, grow_threads, grow_threads, grow_delay, hack_target, n);
+					await ns.sleep(1);
+				}
+
+				if(hack){
 					ns.exec('targeted-hack.js', server, hack_threads, hack_threads, hack_delay, hack_target, n);
+					await ns.sleep(1);
 				}
 
 				ns.exec('targeted-weaken.js', server, weaken_threads, weaken_threads, hack_target, n);
-				await ns.sleep(2);
+				await ns.sleep(3);
 
 				n--;
 				batchCount++;
