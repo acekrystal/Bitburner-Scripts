@@ -603,7 +603,8 @@ export async function main(ns, manualTarget = ns.args[0], partymode = ns.args[1]
 						n=0;
 						break;
 					} else {
-						if (Date.now() >= (initial_time + grow_delay + grow_time - 25 )) { // here we check if we are still starting new scripts while the first scripts start to finish.
+						if (Date.now() >= (initial_time + grow_delay + (grow_time*1.5)  )) { // here we check if we are still starting new scripts while the first scripts start to finish, we can multiply to be sure we stop in time.
+							ns.print("Stopping rolling out")
 							while (ns.getServerMaxRam(host_servers[k]) - ns.getServerUsedRam(host_servers[k]) < ns.getScriptRam('targeted-weaken', 'home') * weaken_threads) {
 								//?? does this part ensure we alway's run a last weaken script on a new server when we run out of staging time?
 								k++;

@@ -71,7 +71,7 @@ export async function main(ns, numServers = ns.args[0]) {
 	} else {
 		while (ns.getPurchasedServers().length < maxServers) {
 			if (ns.getServerMoneyAvailable('home') > ns.getPurchasedServerCost(ram)) {
-				let host = 'AcEcore-' + ns.getPurchasedServers().length;
+				let host = 'AcEcore-d' + ns.getPurchasedServers().length;
 				ns.purchaseServer(host, ram);
 			}
 		}
